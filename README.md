@@ -23,3 +23,24 @@ eg:
 
 `-l 25`  would result in a 25 percent chance that each POST to the bulk endpoint would result in StatusEntityTooLarge, the remaining 75 percent would be StatusOK.
 
+## Building
+
+```
+go build
+```
+
+
+## Running
+
+Always return success
+
+```
+./mock-es
+```
+
+
+20 percent chance for StatusTooManyRequests (429 response)
+
+```
+./mock-es -t 20
+```
