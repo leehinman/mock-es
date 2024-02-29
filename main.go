@@ -4,9 +4,11 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rcrowley/go-metrics"
 )
 
 var (
@@ -38,6 +40,7 @@ func init() {
 
 func main() {
 	mux := http.NewServeMux()
+	go metrics.WriteJSON(metrics.DefaultRegistry, 5*time.Second, os.Stdout)
 	mux.Handle("/", NewAPIHandler(uid, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
 	http.ListenAndServe(addr, mux)
 }

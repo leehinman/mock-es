@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rcrowley/go-metrics"
 )
 
 // BulkResponse is an Elastic Search Bulk Response, assuming
@@ -22,10 +23,21 @@ type BulkResponse struct {
 
 // APIHandler docstring
 type APIHandler struct {
-	ActionOdds [100]int
-	MethodOdds [100]int
-	UUID       uuid.UUID
-	Expire     time.Time
+	ActionOdds    [100]int
+	MethodOdds    [100]int
+	UUID          uuid.UUID
+	Expire        time.Time
+	bulkTotal     metrics.Counter
+	bulkDuplicate metrics.Counter
+	bulkTooMany   metrics.Counter
+	bulkNonIndex  metrics.Counter
+	bulkOK        metrics.Counter
+	bulkTooLarge  metrics.Counter
+	bulkIndex     metrics.Counter
+	bulkUpdate    metrics.Counter
+	bulkDelete    metrics.Counter
+	licenseTotal  metrics.Counter
+	rootTotal     metrics.Counter
 }
 
 // NewAPIHandler return handler with Action and Method Odds array filled in
@@ -65,7 +77,30 @@ func NewAPIHandler(uuid uuid.UUID, expire time.Time, percentDuplicate, percentTo
 	for ; n < len(h.MethodOdds); n++ {
 		h.MethodOdds[n] = http.StatusOK
 	}
+	bulkRegistry := metrics.NewPrefixedChildRegistry(metrics.DefaultRegistry, "bulk.create.")
 
+	h.bulkTotal = metrics.NewCounter()
+	bulkRegistry.Register("total", h.bulkTotal)
+	h.bulkDuplicate = metrics.NewCounter()
+	bulkRegistry.Register("duplicate", h.bulkDuplicate)
+	h.bulkTooMany = metrics.NewCounter()
+	bulkRegistry.Register("too_many", h.bulkTooMany)
+	h.bulkNonIndex = metrics.NewCounter()
+	bulkRegistry.Register("non_index", h.bulkNonIndex)
+	h.bulkOK = metrics.NewCounter()
+	bulkRegistry.Register("ok", h.bulkOK)
+	h.bulkTooLarge = metrics.NewCounter()
+	bulkRegistry.Register("too_large", h.bulkTooLarge)
+	h.bulkIndex = metrics.NewCounter()
+	metrics.GetOrRegister("bulk.index.total", h.bulkIndex)
+	h.bulkUpdate = metrics.NewCounter()
+	metrics.GetOrRegister("bulk.update.total", h.bulkUpdate)
+	h.bulkDelete = metrics.NewCounter()
+	metrics.GetOrRegister("bulk.delete.total", h.bulkDelete)
+	h.licenseTotal = metrics.NewCounter()
+	metrics.GetOrRegister("license.total", h.licenseTotal)
+	h.rootTotal = metrics.NewCounter()
+	metrics.GetOrRegister("root.total", h.rootTotal)
 	return h
 }
 
@@ -86,10 +121,11 @@ func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Bulk handles bulk posts
 func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
+	h.bulkTotal.Inc(1)
 	methodStatus := h.MethodOdds[rand.IntN(len(h.MethodOdds))]
-	if methodStatus != http.StatusOK {
+	if methodStatus == http.StatusRequestEntityTooLarge {
+		h.bulkTooLarge.Inc(1)
 		w.WriteHeader(methodStatus)
-		log.Printf("hit non-ok method response")
 		return
 	}
 
@@ -99,7 +135,7 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 	if prs && encoding[0] == "gzip" {
 		zr, err := gzip.NewReader(r.Body)
 		if err != nil {
-			log.Printf("gzip reader failed: %s", err)
+			log.Printf("error new gzip reader failed: %s", err)
 		}
 		scanner = bufio.NewScanner(zr)
 	} else {
@@ -122,41 +158,49 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 		var j map[string]any
 		err := json.Unmarshal(b, &j)
 		if err != nil {
-			log.Printf("unmarshal error: %s", err)
+			log.Printf("error unmarshal: %s", err)
 			continue
 		}
 		if len(j) != 1 {
-			log.Printf("number of keys off: %d", len(j))
+			log.Printf("error, number of keys off: %d should be 1", len(j))
 			continue
 		}
 		for k := range j {
 			switch k {
 			case "index":
+				h.bulkIndex.Inc(1)
 				skipNextLine = true
-				log.Printf("index received")
 			case "create":
 				skipNextLine = true
 				actionStatus := h.ActionOdds[rand.IntN(len(h.ActionOdds))]
-				if actionStatus != http.StatusOK {
+				switch actionStatus {
+				case http.StatusOK:
+					h.bulkOK.Inc(1)
+				case http.StatusConflict:
 					br.Errors = true
+					h.bulkDuplicate.Inc(1)
+				case http.StatusTooManyRequests:
+					br.Errors = true
+					h.bulkTooMany.Inc(1)
+				case http.StatusNotAcceptable:
+					br.Errors = true
+					h.bulkNonIndex.Inc(1)
 				}
 				br.Items = append(br.Items, map[string]any{"created": map[string]any{"status": actionStatus}})
-				log.Printf("create received")
 			case "update":
+				h.bulkUpdate.Inc(1)
 				skipNextLine = true
-				log.Printf("update received")
 			case "delete":
+				h.bulkDelete.Inc(1)
 				skipNextLine = false
-				log.Printf("delete received")
 			}
 		}
 	}
 	brBytes, err := json.Marshal(br)
 	if err != nil {
-		log.Printf("marshal error: %s", err)
+		log.Printf("error marshal bulk reply: %s", err)
 		return
 	}
-	log.Printf("sent '%s'", string(brBytes))
 	w.Header().Set(http.CanonicalHeaderKey("Content-Type"), "application/json")
 	w.Write(brBytes)
 	return
@@ -164,14 +208,14 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 
 // Root handles / get requests
 func (h *APIHandler) Root(w http.ResponseWriter, r *http.Request) {
-	log.Printf("hit root endpoint")
+	h.rootTotal.Inc(1)
 	w.Write([]byte("{\"name\" : \"mock\", \"version\" : { \"number\" : \"8.11.4\", \"build_flavor\" : \"default\"}}"))
 	return
 }
 
 // License handles /_license get requests
 func (h *APIHandler) License(w http.ResponseWriter, r *http.Request) {
-	log.Printf("hit license endpoint")
+	h.licenseTotal.Inc(1)
 	license := fmt.Sprintf("{\"license\" : {\"status\" : \"active\", \"uid\" : \"%s\", \"type\" : \"trial\", \"expiry_date_in_millis\" : %d}}", h.UUID.String(), h.Expire.UnixMilli())
 	w.Write([]byte(license))
 	return
