@@ -41,7 +41,7 @@ type APIHandler struct {
 }
 
 // NewAPIHandler return handler with Action and Method Odds array filled in
-func NewAPIHandler(uuid uuid.UUID, expire time.Time, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge uint) *APIHandler {
+func NewAPIHandler(uuid uuid.UUID, metricsRegistry metrics.Registry, expire time.Time, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge uint) *APIHandler {
 	h := &APIHandler{UUID: uuid, Expire: expire}
 	if int((percentDuplicate + percentTooMany + percentNonIndex)) > len(h.ActionOdds) {
 		panic(fmt.Errorf("Total of percents can't be greater than %d", len(h.ActionOdds)))
@@ -77,7 +77,7 @@ func NewAPIHandler(uuid uuid.UUID, expire time.Time, percentDuplicate, percentTo
 	for ; n < len(h.MethodOdds); n++ {
 		h.MethodOdds[n] = http.StatusOK
 	}
-	bulkRegistry := metrics.NewPrefixedChildRegistry(metrics.DefaultRegistry, "bulk.create.")
+	bulkRegistry := metrics.NewPrefixedChildRegistry(metricsRegistry, "bulk.create.")
 
 	h.bulkTotal = metrics.NewCounter()
 	bulkRegistry.Register("total", h.bulkTotal)
