@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/leehinman/mock-es/api"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -41,6 +42,10 @@ func init() {
 func main() {
 	mux := http.NewServeMux()
 	go metrics.WriteJSON(metrics.DefaultRegistry, 5*time.Second, os.Stdout)
-	mux.Handle("/", NewAPIHandler(uid, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
-	http.ListenAndServe(addr, mux)
+	mux.Handle("/", api.NewAPIHandler(uid, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		if err != http.ErrServerClosed {
+			log.Fatalf("error running HTTP server: %s", err)
+		}
+	}
 }
