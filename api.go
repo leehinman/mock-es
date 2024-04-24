@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand/v2"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -122,7 +122,7 @@ func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Bulk handles bulk posts
 func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 	h.bulkTotal.Inc(1)
-	methodStatus := h.MethodOdds[rand.IntN(len(h.MethodOdds))]
+	methodStatus := h.MethodOdds[rand.Intn(len(h.MethodOdds))]
 	if methodStatus == http.StatusRequestEntityTooLarge {
 		h.bulkTooLarge.Inc(1)
 		w.WriteHeader(methodStatus)
@@ -172,7 +172,7 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 				skipNextLine = true
 			case "create":
 				skipNextLine = true
-				actionStatus := h.ActionOdds[rand.IntN(len(h.ActionOdds))]
+				actionStatus := h.ActionOdds[rand.Intn(len(h.ActionOdds))]
 				switch actionStatus {
 				case http.StatusOK:
 					h.bulkOK.Inc(1)
