@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"bufio"
@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand/v2"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -41,7 +41,7 @@ type APIHandler struct {
 }
 
 // NewAPIHandler return handler with Action and Method Odds array filled in
-func NewAPIHandler(uuid uuid.UUID, expire time.Time, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge uint) *APIHandler {
+func NewAPIHandler(uuid uuid.UUID, metricsRegistry metrics.Registry, expire time.Time, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge uint) *APIHandler {
 	h := &APIHandler{UUID: uuid, Expire: expire}
 	if int((percentDuplicate + percentTooMany + percentNonIndex)) > len(h.ActionOdds) {
 		panic(fmt.Errorf("Total of percents can't be greater than %d", len(h.ActionOdds)))
@@ -77,7 +77,7 @@ func NewAPIHandler(uuid uuid.UUID, expire time.Time, percentDuplicate, percentTo
 	for ; n < len(h.MethodOdds); n++ {
 		h.MethodOdds[n] = http.StatusOK
 	}
-	bulkRegistry := metrics.NewPrefixedChildRegistry(metrics.DefaultRegistry, "bulk.create.")
+	bulkRegistry := metrics.NewPrefixedChildRegistry(metricsRegistry, "bulk.create.")
 
 	h.bulkTotal = metrics.NewCounter()
 	bulkRegistry.Register("total", h.bulkTotal)
@@ -122,7 +122,7 @@ func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Bulk handles bulk posts
 func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 	h.bulkTotal.Inc(1)
-	methodStatus := h.MethodOdds[rand.IntN(len(h.MethodOdds))]
+	methodStatus := h.MethodOdds[rand.Intn(len(h.MethodOdds))]
 	if methodStatus == http.StatusRequestEntityTooLarge {
 		h.bulkTooLarge.Inc(1)
 		w.WriteHeader(methodStatus)
@@ -172,7 +172,7 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 				skipNextLine = true
 			case "create":
 				skipNextLine = true
-				actionStatus := h.ActionOdds[rand.IntN(len(h.ActionOdds))]
+				actionStatus := h.ActionOdds[rand.Intn(len(h.ActionOdds))]
 				switch actionStatus {
 				case http.StatusOK:
 					h.bulkOK.Inc(1)
