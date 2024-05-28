@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	mockes "github.com/leehinman/mock-es"
+	"github.com/leehinman/mock-es/pkg/api"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -20,14 +20,19 @@ var (
 	percentNonIndex  uint
 	percentTooLarge  uint
 	uid              uuid.UUID
+	clusterUUID      string
+	metricsInterval  time.Duration
 )
 
 func init() {
-	flag.StringVar(&addr, "a", ":9200", "address to listen on ip:port")
-	flag.UintVar(&percentDuplicate, "d", 0, "percent chance StatusConflict is returned for create action")
-	flag.UintVar(&percentTooMany, "t", 0, "percent chance StatusTooManyRequests is returned for create action")
-	flag.UintVar(&percentNonIndex, "n", 0, "percent chance StatusNotAcceptable is returned for create action")
-	flag.UintVar(&percentTooLarge, "l", 0, "percent chance StatusEntityTooLarge is returned for POST method on _bulk endpoint")
+	flag.StringVar(&addr, "addr", ":9200", "address to listen on ip:port")
+	flag.UintVar(&percentDuplicate, "dup", 0, "percent chance StatusConflict is returned for create action")
+	flag.UintVar(&percentTooMany, "toomany", 0, "percent chance StatusTooManyRequests is returned for create action")
+	flag.UintVar(&percentNonIndex, "nonindex", 0, "percent chance StatusNotAcceptable is returned for create action")
+	flag.UintVar(&percentTooLarge, "toolarge", 0, "percent chance StatusEntityTooLarge is returned for POST method on _bulk endpoint")
+	flag.StringVar(&clusterUUID, "clusteruuid", "", "Cluster UUID of Elasticsearch we are mocking")
+	flag.DurationVar(&metricsInterval, "metrics", 0, "Interval to print metrics to stdout, 0 is no metrics")
+
 	uid = uuid.New()
 	expire = time.Now().Add(24 * time.Hour)
 	flag.Parse()
@@ -41,8 +46,12 @@ func init() {
 
 func main() {
 	mux := http.NewServeMux()
-	go metrics.WriteJSON(metrics.DefaultRegistry, 5*time.Second, os.Stdout)
-	mux.Handle("/", mockes.NewAPIHandler(uid, metrics.DefaultRegistry, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
+
+	if metricsInterval > 0 {
+		go metrics.WriteJSON(metrics.DefaultRegistry, metricsInterval, os.Stdout)
+	}
+
+	mux.Handle("/",api.NewAPIHandler(uid, clusterUUID, metrics.DefaultRegistry, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		if err != http.ErrServerClosed {
 			log.Fatalf("error running HTTP server: %s", err)
