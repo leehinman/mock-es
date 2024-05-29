@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mileusna/useragent"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -135,13 +136,15 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 	var scanner *bufio.Scanner
 	br := BulkResponse{}
 	encoding, prs := r.Header[http.CanonicalHeaderKey("Content-Encoding")]
-	if prs && encoding[0] == "gzip" {
+	switch {
+	case prs && encoding[0] == "gzip":
 		zr, err := gzip.NewReader(r.Body)
 		if err != nil {
 			log.Printf("error new gzip reader failed: %s", err)
+			return
 		}
 		scanner = bufio.NewScanner(zr)
-	} else {
+	default:
 		scanner = bufio.NewScanner(r.Body)
 	}
 	// bulk requests come in as 2 lines
@@ -212,7 +215,8 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 // Root handles / get requests
 func (h *APIHandler) Root(w http.ResponseWriter, r *http.Request) {
 	h.rootTotal.Inc(1)
-	root := fmt.Sprintf("{\"name\" : \"mock\", \"cluster_uuid\" : \"%s\", \"version\" : { \"number\" : \"8.13.2\", \"build_flavor\" : \"default\"}}", h.ClusterUUID)
+	version := parseUserAgent(r.Header.Get("User-Agent"))
+	root := fmt.Sprintf("{\"name\" : \"mock\", \"cluster_uuid\" : \"%s\", \"version\" : { \"number\" : \"%s\", \"build_flavor\" : \"default\"}}", h.ClusterUUID, version)
 	w.Header().Set(http.CanonicalHeaderKey("Content-Type"), "application/json")
 	w.Write([]byte(root))
 	return
@@ -225,4 +229,9 @@ func (h *APIHandler) License(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(http.CanonicalHeaderKey("Content-Type"), "application/json")
 	w.Write([]byte(license))
 	return
+}
+
+func parseUserAgent(agentString string) string {
+	ua := useragent.Parse(agentString)
+	return ua.VersionNoFull()
 }
