@@ -22,6 +22,8 @@ var (
 	uid              uuid.UUID
 	clusterUUID      string
 	metricsInterval  time.Duration
+	certFile         string
+	keyFile          string
 )
 
 func init() {
@@ -32,6 +34,8 @@ func init() {
 	flag.UintVar(&percentTooLarge, "toolarge", 0, "percent chance StatusEntityTooLarge is returned for POST method on _bulk endpoint")
 	flag.StringVar(&clusterUUID, "clusteruuid", "", "Cluster UUID of Elasticsearch we are mocking")
 	flag.DurationVar(&metricsInterval, "metrics", 0, "Interval to print metrics to stdout, 0 is no metrics")
+	flag.StringVar(&certFile, "certfile", "", "path to PEM certificate file, empty sting is no TLS")
+	flag.StringVar(&keyFile, "keyfile", "", "path to PEM private key file, empty sting is no TLS")
 
 	uid = uuid.New()
 	expire = time.Now().Add(24 * time.Hour)
@@ -51,10 +55,20 @@ func main() {
 		go metrics.WriteJSON(metrics.DefaultRegistry, metricsInterval, os.Stdout)
 	}
 
-	mux.Handle("/",api.NewAPIHandler(uid, clusterUUID, metrics.DefaultRegistry, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		if err != http.ErrServerClosed {
-			log.Fatalf("error running HTTP server: %s", err)
+	mux.Handle("/", api.NewAPIHandler(uid, clusterUUID, metrics.DefaultRegistry, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
+
+	switch {
+	case certFile != "" && keyFile != "":
+		if err := http.ListenAndServeTLS(addr, certFile, keyFile, mux); err != nil {
+			if err != http.ErrServerClosed {
+				log.Fatalf("error running HTTPs server: %s", err)
+			}
+		}
+	default:
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			if err != http.ErrServerClosed {
+				log.Fatalf("error running HTTP server: %s", err)
+			}
 		}
 	}
 }
