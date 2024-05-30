@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mileusna/useragent"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -21,11 +22,12 @@ type BulkResponse struct {
 	Items  []map[string]any `json:"items,omitempty"`
 }
 
-// APIHandler docstring
+// APIHandler struct.  Use NewAPIHandler to make sure it is filled in correctly for use.
 type APIHandler struct {
 	ActionOdds    [100]int
 	MethodOdds    [100]int
 	UUID          uuid.UUID
+	ClusterUUID   string
 	Expire        time.Time
 	bulkTotal     metrics.Counter
 	bulkDuplicate metrics.Counter
@@ -41,8 +43,8 @@ type APIHandler struct {
 }
 
 // NewAPIHandler return handler with Action and Method Odds array filled in
-func NewAPIHandler(uuid uuid.UUID, metricsRegistry metrics.Registry, expire time.Time, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge uint) *APIHandler {
-	h := &APIHandler{UUID: uuid, Expire: expire}
+func NewAPIHandler(uuid uuid.UUID, clusterUUID string, metricsRegistry metrics.Registry, expire time.Time, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge uint) *APIHandler {
+	h := &APIHandler{UUID: uuid, Expire: expire, ClusterUUID: clusterUUID}
 	if int((percentDuplicate + percentTooMany + percentNonIndex)) > len(h.ActionOdds) {
 		panic(fmt.Errorf("Total of percents can't be greater than %d", len(h.ActionOdds)))
 	}
@@ -104,17 +106,20 @@ func NewAPIHandler(uuid uuid.UUID, metricsRegistry metrics.Registry, expire time
 	return h
 }
 
+//ServeHTTP looks at the request and routes it to the correct handler function
 func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/":
+		h.Root(w, r)
+		return
 	case r.Method == http.MethodPost && r.URL.Path == "/_bulk":
 		h.Bulk(w, r)
 		return
-	case r.Method == http.MethodGet && r.URL.Path == "/":
-		h.Root(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/_license":
 		h.License(w, r)
+		return
 	default:
-		w.Write([]byte("Hello World"))
+		w.Write([]byte("{\"tagline\": \"You Know, for Testing\"}"))
 		return
 	}
 }
@@ -132,13 +137,15 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 	var scanner *bufio.Scanner
 	br := BulkResponse{}
 	encoding, prs := r.Header[http.CanonicalHeaderKey("Content-Encoding")]
-	if prs && encoding[0] == "gzip" {
+	switch {
+	case prs && encoding[0] == "gzip":
 		zr, err := gzip.NewReader(r.Body)
 		if err != nil {
 			log.Printf("error new gzip reader failed: %s", err)
+			return
 		}
 		scanner = bufio.NewScanner(zr)
-	} else {
+	default:
 		scanner = bufio.NewScanner(r.Body)
 	}
 	// bulk requests come in as 2 lines
@@ -209,7 +216,10 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 // Root handles / get requests
 func (h *APIHandler) Root(w http.ResponseWriter, r *http.Request) {
 	h.rootTotal.Inc(1)
-	w.Write([]byte("{\"name\" : \"mock\", \"version\" : { \"number\" : \"8.11.4\", \"build_flavor\" : \"default\"}}"))
+	version := parseUserAgent(r.Header.Get("User-Agent"))
+	root := fmt.Sprintf("{\"name\" : \"mock\", \"cluster_uuid\" : \"%s\", \"version\" : { \"number\" : \"%s\", \"build_flavor\" : \"default\"}}", h.ClusterUUID, version)
+	w.Header().Set(http.CanonicalHeaderKey("Content-Type"), "application/json")
+	w.Write([]byte(root))
 	return
 }
 
@@ -217,6 +227,12 @@ func (h *APIHandler) Root(w http.ResponseWriter, r *http.Request) {
 func (h *APIHandler) License(w http.ResponseWriter, r *http.Request) {
 	h.licenseTotal.Inc(1)
 	license := fmt.Sprintf("{\"license\" : {\"status\" : \"active\", \"uid\" : \"%s\", \"type\" : \"trial\", \"expiry_date_in_millis\" : %d}}", h.UUID.String(), h.Expire.UnixMilli())
+	w.Header().Set(http.CanonicalHeaderKey("Content-Type"), "application/json")
 	w.Write([]byte(license))
 	return
+}
+
+func parseUserAgent(agentString string) string {
+	ua := useragent.Parse(agentString)
+	return ua.VersionNoFull()
 }
