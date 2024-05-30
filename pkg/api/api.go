@@ -22,7 +22,7 @@ type BulkResponse struct {
 	Items  []map[string]any `json:"items,omitempty"`
 }
 
-// APIHandler docstring
+// APIHandler struct.  Use NewAPIHandler to make sure it is filled in correctly for use.
 type APIHandler struct {
 	ActionOdds    [100]int
 	MethodOdds    [100]int
@@ -106,6 +106,7 @@ func NewAPIHandler(uuid uuid.UUID, clusterUUID string, metricsRegistry metrics.R
 	return h
 }
 
+//ServeHTTP looks at the request and routes it to the correct handler function
 func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/":
