@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/elastic/mock-es/pkg/api"
 	"github.com/google/uuid"
-	"github.com/leehinman/mock-es/pkg/api"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -24,6 +24,7 @@ var (
 	metricsInterval  time.Duration
 	certFile         string
 	keyFile          string
+	delay            time.Duration
 )
 
 func init() {
@@ -33,9 +34,10 @@ func init() {
 	flag.UintVar(&percentNonIndex, "nonindex", 0, "percent chance StatusNotAcceptable is returned for create action")
 	flag.UintVar(&percentTooLarge, "toolarge", 0, "percent chance StatusEntityTooLarge is returned for POST method on _bulk endpoint")
 	flag.StringVar(&clusterUUID, "clusteruuid", "", "Cluster UUID of Elasticsearch we are mocking")
-	flag.DurationVar(&metricsInterval, "metrics", 0, "Interval to print metrics to stdout, 0 is no metrics")
+	flag.DurationVar(&metricsInterval, "metrics", 0, "Go 'time.Duration' to wait between printing metrics to stdout, 0 is no metrics")
 	flag.StringVar(&certFile, "certfile", "", "path to PEM certificate file, empty sting is no TLS")
 	flag.StringVar(&keyFile, "keyfile", "", "path to PEM private key file, empty sting is no TLS")
+	flag.DurationVar(&delay, "delay", 0, "Go 'time.Duration' to wait before processing API request, 0 is no delay")
 
 	uid = uuid.New()
 	expire = time.Now().Add(24 * time.Hour)
@@ -55,7 +57,7 @@ func main() {
 		go metrics.WriteJSON(metrics.DefaultRegistry, metricsInterval, os.Stdout)
 	}
 
-	mux.Handle("/", api.NewAPIHandler(uid, clusterUUID, metrics.DefaultRegistry, expire, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
+	mux.Handle("/", api.NewAPIHandler(uid, clusterUUID, metrics.DefaultRegistry, expire, delay, percentDuplicate, percentTooMany, percentNonIndex, percentTooLarge))
 
 	switch {
 	case certFile != "" && keyFile != "":
