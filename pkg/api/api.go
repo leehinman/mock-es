@@ -91,6 +91,9 @@ func NewAPIHandler(uuid uuid.UUID, clusterUUID string, metricsRegistry metrics.R
 // ServeHTTP looks at the request and routes it to the correct handler function
 func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	time.Sleep(h.Delay)
+	ua := useragent.Parse(r.Header.Get("User-Agent"))
+	incrementCounter("user_agent."+ ua.String + ".total", h.metricsRegistry)
+	incrementCounter("user_agent."+ ua.String + "." + r.URL.Path, h.metricsRegistry)
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/":
 		h.Root(w, r)
@@ -200,7 +203,6 @@ func (h *APIHandler) Bulk(w http.ResponseWriter, r *http.Request) {
 func (h *APIHandler) Root(w http.ResponseWriter, r *http.Request) {
 	incrementCounter(rootTotalMetrics, h.metricsRegistry)
 	ua := useragent.Parse(r.Header.Get("User-Agent"))
-	incrementCounter("root.user_agent."+ua.String, h.metricsRegistry)
 	root := fmt.Sprintf("{\"name\" : \"mock\", \"cluster_uuid\" : \"%s\", \"version\" : { \"number\" : \"%s\", \"build_flavor\" : \"default\"}}", h.ClusterUUID, ua.VersionNoFull())
 	w.Header().Set(http.CanonicalHeaderKey("Content-Type"), "application/json")
 	w.Write([]byte(root))
